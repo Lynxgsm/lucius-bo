@@ -34,19 +34,21 @@ const VideoPlayer = () => {
           .split('\n')
           .filter((line) => line.trim() !== '')
           .map((line) => {
-            // First split by comma to get the standard fields
             const basicParts = line.split(',');
-            const timestamp = parseFloat(basicParts[0]);
-            const classId = parseInt(basicParts[1]);
-            const className = basicParts[2];
-            const confidence = parseFloat(basicParts[3]);
-            const x1 = parseFloat(basicParts[4]);
-            const y1 = parseFloat(basicParts[5]);
-            const x2 = parseFloat(basicParts[6]);
-            const y2 = parseFloat(basicParts[7]);
 
-            // Create the base bounding box object
+            const video_size = basicParts[0];
+
+            const timestamp = parseFloat(basicParts[1]);
+            const classId = parseInt(basicParts[2]);
+            const className = basicParts[3];
+            const confidence = parseFloat(basicParts[4]);
+            const x1 = parseFloat(basicParts[5]);
+            const y1 = parseFloat(basicParts[6]);
+            const x2 = parseFloat(basicParts[7]);
+            const y2 = parseFloat(basicParts[8]);
+
             const boundingBox: BoundingBox = {
+              video_size,
               timestamp,
               classId,
               className,
@@ -57,15 +59,12 @@ const VideoPlayer = () => {
               y2,
             };
 
-            // For damage annotations, parse the polygon points
             if (filePath.includes('damage.txt')) {
-              // Extract the polygon points part from the line
               const polygonPart = line.substring(
-                line.indexOf(basicParts[7]) + basicParts[7].length
+                line.indexOf(basicParts[8]) + basicParts[8].length
               );
 
               if (polygonPart.includes(';')) {
-                // The format is: x1,y1;x2,y2;x3,y3;... after the y2 value
                 const polygonString = polygonPart.startsWith(',')
                   ? polygonPart.substring(1)
                   : polygonPart;
@@ -97,14 +96,27 @@ const VideoPlayer = () => {
       setDamages(damageData);
       setDetections(detectionData);
 
-      setOriginalDimensions({
-        width: DEFAULT_ORIGINAL_WIDTH,
-        height: DEFAULT_ORIGINAL_HEIGHT,
-      });
+      if (damageData.length > 0) {
+        const [width, height] = damageData[0].video_size.split('x').map(Number);
 
-      console.log(
-        `Using provided video dimensions: ${DEFAULT_ORIGINAL_WIDTH}x${DEFAULT_ORIGINAL_HEIGHT}`
-      );
+        setOriginalDimensions({
+          width,
+          height,
+        });
+
+        console.log(
+          `Using video dimensions from damage.txt: ${width}x${height}`
+        );
+      } else {
+        setOriginalDimensions({
+          width: DEFAULT_ORIGINAL_WIDTH,
+          height: DEFAULT_ORIGINAL_HEIGHT,
+        });
+
+        console.log(
+          `Using default video dimensions: ${DEFAULT_ORIGINAL_WIDTH}x${DEFAULT_ORIGINAL_HEIGHT}`
+        );
+      }
     };
 
     loadData();
@@ -173,7 +185,6 @@ const VideoPlayer = () => {
         ctx.fillStyle = color;
 
         if (isDamage && box.polygon_points && box.polygon_points.length > 0) {
-          // Draw polygon for damage
           ctx.beginPath();
           const firstPoint = box.polygon_points[0];
           ctx.moveTo(firstPoint.x * scaleX, firstPoint.y * scaleY);
@@ -183,12 +194,10 @@ const VideoPlayer = () => {
             ctx.lineTo(point.x * scaleX, point.y * scaleY);
           }
 
-          // Close the polygon
           ctx.closePath();
           ctx.stroke();
           ctx.fill();
 
-          // Add label
           ctx.font = '12px Arial';
           ctx.fillText(
             `${box.className} (${Math.round(box.confidence * 100)}%)`,
@@ -196,7 +205,6 @@ const VideoPlayer = () => {
             box.polygon_points[0].y * scaleY - 5
           );
         } else {
-          // Draw rectangle for regular detections
           const scaledX1 = box.x1 * scaleX;
           const scaledY1 = box.y1 * scaleY;
           const scaledX2 = box.x2 * scaleX;
@@ -211,7 +219,6 @@ const VideoPlayer = () => {
           );
           ctx.stroke();
 
-          // Add label
           ctx.font = '12px Arial';
           ctx.fillText(
             `${box.className} (${Math.round(box.confidence * 100)}%)`,

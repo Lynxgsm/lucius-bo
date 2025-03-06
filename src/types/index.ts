@@ -1,4 +1,5 @@
 export interface BoundingBox {
+  video_size: string;
   timestamp: number;
   classId: number;
   className: string;
