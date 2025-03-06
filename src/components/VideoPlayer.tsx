@@ -186,6 +186,7 @@ const VideoPlayer = () => {
           // Close the polygon
           ctx.closePath();
           ctx.stroke();
+          ctx.fill();
 
           // Add label
           ctx.font = '12px Arial';
