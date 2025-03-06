@@ -34,18 +34,56 @@ const VideoPlayer = () => {
           .split('\n')
           .filter((line) => line.trim() !== '')
           .map((line) => {
-            const [timestamp, classId, className, confidence, x1, y1, x2, y2] =
-              line.split(',');
-            return {
-              timestamp: parseFloat(timestamp),
-              classId: parseInt(classId),
+            // First split by comma to get the standard fields
+            const basicParts = line.split(',');
+            const timestamp = parseFloat(basicParts[0]);
+            const classId = parseInt(basicParts[1]);
+            const className = basicParts[2];
+            const confidence = parseFloat(basicParts[3]);
+            const x1 = parseFloat(basicParts[4]);
+            const y1 = parseFloat(basicParts[5]);
+            const x2 = parseFloat(basicParts[6]);
+            const y2 = parseFloat(basicParts[7]);
+
+            // Create the base bounding box object
+            const boundingBox: BoundingBox = {
+              timestamp,
+              classId,
               className,
-              confidence: parseFloat(confidence),
-              x1: parseFloat(x1),
-              y1: parseFloat(y1),
-              x2: parseFloat(x2),
-              y2: parseFloat(y2),
+              confidence,
+              x1,
+              y1,
+              x2,
+              y2,
             };
+
+            // For damage annotations, parse the polygon points
+            if (filePath.includes('damage.txt')) {
+              // Extract the polygon points part from the line
+              const polygonPart = line.substring(
+                line.indexOf(basicParts[7]) + basicParts[7].length
+              );
+
+              if (polygonPart.includes(';')) {
+                // The format is: x1,y1;x2,y2;x3,y3;... after the y2 value
+                const polygonString = polygonPart.startsWith(',')
+                  ? polygonPart.substring(1)
+                  : polygonPart;
+                const pointPairs = polygonString.split(';');
+
+                const polygonPoints = pointPairs.map((pair) => {
+                  const [x, y] = pair.split(',');
+                  return {
+                    x: parseFloat(x),
+                    y: parseFloat(y),
+                  };
+                });
+
+                boundingBox.polygon_points = polygonPoints;
+              }
+            }
+
+            return boundingBox;
           });
       } catch (error) {
         console.error(`Error loading data from ${filePath}:`, error);
@@ -108,16 +146,19 @@ const VideoPlayer = () => {
   }, []);
 
   useEffect(() => {
-    const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas) return;
+    if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const drawBoxes = (boxes: BoundingBox[], color: string) => {
+    const drawBoxes = (
+      boxes: BoundingBox[],
+      color: string,
+      isDamage: boolean
+    ) => {
       const threshold = 0.01;
       const matchingBoxes = boxes.filter(
         (box) => Math.abs(box.timestamp - currentTimestamp) <= threshold
@@ -127,33 +168,65 @@ const VideoPlayer = () => {
       const scaleY = videoDimensions.height / originalDimensions.height;
 
       matchingBoxes.forEach((box) => {
-        const scaledX1 = box.x1 * scaleX;
-        const scaledY1 = box.y1 * scaleY;
-        const scaledX2 = box.x2 * scaleX;
-        const scaledY2 = box.y2 * scaleY;
-
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.rect(scaledX1, scaledY1, scaledX2 - scaledX1, scaledY2 - scaledY1);
-        ctx.stroke();
-
         ctx.fillStyle = color;
-        ctx.font = '12px Arial';
-        ctx.fillText(
-          `${box.className} (${Math.round(box.confidence * 100)}%)`,
-          scaledX1,
-          scaledY1 - 5
-        );
+
+        if (isDamage && box.polygon_points && box.polygon_points.length > 0) {
+          // Draw polygon for damage
+          ctx.beginPath();
+          const firstPoint = box.polygon_points[0];
+          ctx.moveTo(firstPoint.x * scaleX, firstPoint.y * scaleY);
+
+          for (let i = 1; i < box.polygon_points.length; i++) {
+            const point = box.polygon_points[i];
+            ctx.lineTo(point.x * scaleX, point.y * scaleY);
+          }
+
+          // Close the polygon
+          ctx.closePath();
+          ctx.stroke();
+
+          // Add label
+          ctx.font = '12px Arial';
+          ctx.fillText(
+            `${box.className} (${Math.round(box.confidence * 100)}%)`,
+            box.polygon_points[0].x * scaleX,
+            box.polygon_points[0].y * scaleY - 5
+          );
+        } else {
+          // Draw rectangle for regular detections
+          const scaledX1 = box.x1 * scaleX;
+          const scaledY1 = box.y1 * scaleY;
+          const scaledX2 = box.x2 * scaleX;
+          const scaledY2 = box.y2 * scaleY;
+
+          ctx.beginPath();
+          ctx.rect(
+            scaledX1,
+            scaledY1,
+            scaledX2 - scaledX1,
+            scaledY2 - scaledY1
+          );
+          ctx.stroke();
+
+          // Add label
+          ctx.font = '12px Arial';
+          ctx.fillText(
+            `${box.className} (${Math.round(box.confidence * 100)}%)`,
+            scaledX1,
+            scaledY1 - 5
+          );
+        }
       });
     };
 
     if (damages.length > 0 && showDamage) {
-      drawBoxes(damages, 'red');
+      drawBoxes(damages, 'red', true);
     }
 
     if (detections.length > 0 && showDetection) {
-      drawBoxes(detections, 'blue');
+      drawBoxes(detections, 'blue', false);
     }
   }, [
     currentTimestamp,
